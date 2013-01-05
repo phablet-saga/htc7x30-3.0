@@ -72,7 +72,6 @@ static struct vsycn_ctrl {
 	int dmae_intr_cnt;
 	atomic_t suspend;
 	atomic_t vsync_resume;
-	int dmae_wait_cnt;
 	int wait_vsync_cnt;
 	int blt_change;
 	int sysfs_created;
@@ -237,7 +236,7 @@ int mdp4_dtv_pipe_commit(int cndx, int wait)
 	mdp4_stat.overlay_commit[pipe->mixer_num]++;
 
 	if (wait)
-		mdp4_dtv_wait4dmae(cndx);
+		mdp4_dtv_wait4dmae(0);
 
 	return cnt;
 }
@@ -587,8 +586,10 @@ int mdp4_dtv_off(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd;
 	int ret = 0;
 	int cndx = 0;
+	int undx;
 	struct vsycn_ctrl *vctrl;
 	struct mdp4_overlay_pipe *pipe;
+	struct vsync_update *vp;
 
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
 
@@ -628,6 +629,16 @@ int mdp4_dtv_off(struct platform_device *pdev)
 	}
 
 	mdp4_overlay_panel_mode_unset(MDP4_MIXER1, MDP4_PANEL_DTV);
+
+	undx =  vctrl->update_ndx;
+	vp = &vctrl->vlist[undx];
+	if (vp->update_cnt) {
+		/*
+		 * pipe's iommu will be freed at next overlay play
+		 * and iommu_drop statistic will be increased by one
+		 */
+		vp->update_cnt = 0;     /* empty queue */
+	}
 
 	ret = panel_next_off(pdev);
 	mdp_footswitch_ctrl(FALSE);
@@ -1020,8 +1031,11 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 	struct vsycn_ctrl *vctrl;
 	struct mdp4_overlay_pipe *pipe;
 
-	if (!mfd->panel_power_on)
+	mutex_lock(&mfd->dma->ov_mutex);
+	if (!mfd->panel_power_on) {
+		mutex_unlock(&mfd->dma->ov_mutex);
 		return;
+	}
 
 	vctrl = &vsync_ctrl_db[cndx];
 	if (vctrl->base_pipe == NULL)
@@ -1031,6 +1045,7 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 
 	if (pipe == NULL) {
 		pr_warn("%s: dtv_pipe == NULL\n", __func__);
+		mutex_unlock(&mfd->dma->ov_mutex);
 		return;
 	}
 
@@ -1046,9 +1061,8 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 		mdp4_dtv_pipe_queue(0, pipe);
 	}
 
-	mutex_lock(&mfd->dma->ov_mutex);
 	mdp4_overlay_mdp_perf_upd(mfd, 1);
-	mdp4_dtv_pipe_commit(cndx, 0);
+	mdp4_dtv_pipe_commit(0, 0);
 	mdp4_overlay_mdp_perf_upd(mfd, 0);
 	mutex_unlock(&mfd->dma->ov_mutex);
 }

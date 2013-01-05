@@ -127,15 +127,12 @@ static u32 res_trk_disable_videocore(void)
 	clk_put(resource_context.hclk_div2);
 	clk_put(resource_context.hclk);
 	clk_put(resource_context.pclk);
-/* HTC_START - Check regulator pointer */
-	if (!IS_ERR(resource_context.regulator)) {
-		rc = regulator_disable(resource_context.regulator);
-		if (rc) {
-			VCDRES_MSG_ERROR("\n regulator disable failed %d\n", rc);
-			mutex_unlock(&resource_context.lock);
-			return false;
-		}
-/* HTC_END */
+
+	rc = regulator_disable(resource_context.regulator);
+	if (rc) {
+		VCDRES_MSG_ERROR("\n regulator disable failed %d\n", rc);
+		mutex_unlock(&resource_context.lock);
+		return false;
 	}
 
 	resource_context.hclk_div2 = NULL;
@@ -269,18 +266,16 @@ static u32 res_trk_enable_videocore(void)
 	mutex_lock(&resource_context.lock);
 	if (!resource_context.rail_enabled) {
 		int rc = -1;
-/* HTC_START - Check regulator pointer */
-		if (!IS_ERR(resource_context.regulator)) {
-			rc = regulator_enable(resource_context.regulator);
-			if (rc) {
-				VCDRES_MSG_ERROR("%s(): regulator_enable failed %d\n",
-								 __func__, rc);
-				goto bail_out;
-			}
-			VCDRES_MSG_LOW("%s(): regulator enable Success %d\n",
-								__func__, rc);
+
+		rc = regulator_enable(resource_context.regulator);
+		if (rc) {
+			VCDRES_MSG_ERROR("%s(): regulator_enable failed %d\n",
+							 __func__, rc);
+			goto bail_out;
 		}
-/* HTC_END */
+		VCDRES_MSG_LOW("%s(): regulator enable Success %d\n",
+							__func__, rc);
+
 		resource_context.pclk = clk_get(resource_context.device,
 			"iface_clk");
 
@@ -755,14 +750,13 @@ struct ion_client *res_trk_get_ion_client(void)
 
 u32 res_trk_get_mem_type(void)
 {
-	u32 mem_type;
+       u32 mem_type;
 
-	if (resource_context.vidc_platform_data->enable_ion)
-		mem_type = ION_HEAP(resource_context.memtype);
-	else
-		mem_type = resource_context.memtype;
-
-	return mem_type;
+       if (resource_context.vidc_platform_data->enable_ion)
+               mem_type = ION_HEAP(resource_context.memtype);
+       else
+               mem_type = resource_context.memtype;
+       return mem_type;
 }
 
 void res_trk_set_mem_type(enum ddl_mem_area mem_type)

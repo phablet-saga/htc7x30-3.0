@@ -43,7 +43,7 @@ extern ulong mdp4_display_intf;
 extern spinlock_t mdp_spin_lock;
 extern int mdp_rev;
 extern struct mdp_csc_cfg mdp_csc_convert[4];
-
+extern struct mdp_csc_cfg_data csc_cfg_matrix[];
 extern struct workqueue_struct *mdp_hist_wq;
 
 extern uint32 mdp_intr_mask;
@@ -76,7 +76,6 @@ extern uint32 mdp_intr_mask;
 
 struct mdp_buf_type {
 	struct ion_handle *ihdl;
-	u32 phys_addr;
 	u32 write_addr;
 	u32 read_addr;
 	u32 size;
@@ -93,16 +92,9 @@ extern unsigned char hdmi_prim_display;
 
 struct vsync {
 	ktime_t vsync_time;
-	struct completion vsync_comp;
 	struct device *dev;
 	struct work_struct vsync_work;
 	int vsync_irq_enabled;
-	int vsync_dma_enabled;
-	int disabled_clocks;
-	struct completion vsync_wait;
-	atomic_t suspend;
-	atomic_t vsync_resume;
-	int sysfs_created;
 };
 
 extern struct vsync vsync_cntrl;
@@ -261,6 +253,7 @@ struct mdp_hist_lut_info {
 struct mdp_hist_mgmt {
 	uint32_t block;
 	uint32_t irq_term;
+	uint32_t intr;
 	uint32_t base;
 	struct completion mdp_hist_comp;
 	struct mutex mdp_hist_mutex;
@@ -328,6 +321,14 @@ extern struct mdp_hist_mgmt *mdp_hist_mgmt_array[];
 #define TV_OUT_DMA3_START   BIT(13)
 #define MDP_HIST_DONE       BIT(20)
 
+/*MDP4 MDP histogram interrupts*/
+/*note: these are only applicable on MDP4+ targets*/
+#define INTR_VG1_HISTOGRAM		BIT(5)
+#define INTR_VG2_HISTOGRAM		BIT(6)
+#define INTR_DMA_P_HISTOGRAM		BIT(17)
+#define INTR_DMA_S_HISTOGRAM		BIT(26)
+/*end MDP4 MDP histogram interrupts*/
+
 /* histogram interrupts */
 #define INTR_HIST_DONE			BIT(1)
 #define INTR_HIST_RESET_SEQ_DONE	BIT(0)
@@ -342,7 +343,6 @@ extern struct mdp_hist_mgmt *mdp_hist_mgmt_array[];
 			MDP_DMA_S_DONE| \
 			MDP_DMA_E_DONE| \
 			LCDC_UNDERFLOW| \
-			MDP_HIST_DONE| \
 			TV_ENC_UNDERRUN)
 #endif
 
@@ -810,6 +810,14 @@ static inline int mdp4_mddi_on(struct platform_device *pdev)
 #endif
 
 
+#ifdef CONFIG_FB_MSM_MDDI
+static inline void mdp4_mddi_rdptr_init(int cndx)
+{
+	/* empty */
+}
+
+#endif
+
 void set_cont_splashScreen_status(int);
 
 int mdp_hw_cursor_update(struct fb_info *info, struct fb_cursor *cursor);
@@ -845,12 +853,8 @@ static inline int mdp_bus_scale_update_request(uint32_t index)
 void mdp_dma_vsync_ctrl(int enable);
 void mdp_dma_video_vsync_ctrl(int enable);
 void mdp_dma_lcdc_vsync_ctrl(int enable);
-ssize_t mdp_dma_show_event(struct device *dev,
-		struct device_attribute *attr, char *buf);
-ssize_t mdp_dma_video_show_event(struct device *dev,
-		struct device_attribute *attr, char *buf);
-ssize_t mdp_dma_lcdc_show_event(struct device *dev,
-		struct device_attribute *attr, char *buf);
+void mdp3_vsync_irq_enable(int intr, int term);
+void mdp3_vsync_irq_disable(int intr, int term);
 
 #ifdef MDP_HW_VSYNC
 void vsync_clk_prepare_enable(void);

@@ -259,9 +259,9 @@ int mdp4_lcdc_pipe_commit(int cndx, int wait)
 
 	if (wait) {
 		if (pipe->ov_blt_addr)
-			mdp4_lcdc_wait4ov(cndx);
+			mdp4_lcdc_wait4ov(0);
 		else
-			mdp4_lcdc_wait4dmap(cndx);
+			mdp4_lcdc_wait4dmap(0);
 	}
 
 	return cnt;
@@ -654,8 +654,9 @@ int mdp4_lcdc_off(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd;
 	struct vsycn_ctrl *vctrl;
 	struct mdp4_overlay_pipe *pipe;
+	struct vsync_update *vp;
 	unsigned long flags;
-	int need_wait = 0;
+	int undx, need_wait = 0;
 
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
 	vctrl = &vsync_ctrl_db[cndx];
@@ -677,12 +678,21 @@ int mdp4_lcdc_off(struct platform_device *pdev)
 			mdp4_lcdc_wait4ov(0);
 	}
 
+	mdp_histogram_ctrl_all(FALSE);
+
 	MDP_OUTP(MDP_BASE + LCDC_BASE, 0);
 
 	lcdc_enabled = 0;
 
-	mdp_histogram_ctrl_all(FALSE);
-
+	undx =  vctrl->update_ndx;
+	vp = &vctrl->vlist[undx];
+	if (vp->update_cnt) {
+		/*
+		 * pipe's iommu will be freed at next overlay play
+		 * and iommu_drop statistic will be increased by one
+		 */
+		vp->update_cnt = 0;     /* empty queue */
+	}
 
 	if (pipe) {
 		/* sanity check, free pipes besides base layer */
@@ -921,12 +931,15 @@ void mdp4_lcdc_overlay(struct msm_fb_data_type *mfd)
 	struct vsycn_ctrl *vctrl;
 	struct mdp4_overlay_pipe *pipe;
 
+	mutex_lock(&mfd->dma->ov_mutex);
 
 	vctrl = &vsync_ctrl_db[cndx];
 	pipe = vctrl->base_pipe;
 
-	if (!pipe || !mfd->panel_power_on)
+	if (!pipe || !mfd->panel_power_on) {
+		mutex_unlock(&mfd->dma->ov_mutex);
 		return;
+	}
 
 	pr_debug("%s: cpu=%d pid=%d\n", __func__,
 			smp_processor_id(), current->pid);
@@ -944,16 +957,15 @@ void mdp4_lcdc_overlay(struct msm_fb_data_type *mfd)
 		mdp4_lcdc_pipe_queue(0, pipe);
 	}
 
-	mutex_lock(&mfd->dma->ov_mutex);
 	mdp4_overlay_mdp_perf_upd(mfd, 1);
 
-	mdp4_lcdc_pipe_commit(cndx, 0);
-	mutex_unlock(&mfd->dma->ov_mutex);
+	mdp4_lcdc_pipe_commit(0, 0);
 
 	if (pipe->ov_blt_addr)
-		mdp4_lcdc_wait4ov(cndx);
+		mdp4_lcdc_wait4ov(0);
 	else
-		mdp4_lcdc_wait4dmap(cndx);
+		mdp4_lcdc_wait4dmap(0);
 
 	mdp4_overlay_mdp_perf_upd(mfd, 0);
+	mutex_unlock(&mfd->dma->ov_mutex);
 }
