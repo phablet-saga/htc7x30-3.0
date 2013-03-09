@@ -786,7 +786,8 @@ static int mdp_bl_scale_config(struct msm_fb_data_type *mfd,
 								bl_min_lvl);
 
 	/* update current backlight to use new scaling*/
-	msm_fb_set_backlight(mfd, curr_bl);
+	if (mfd->panel_power_on && bl_updated)
+		msm_fb_set_backlight(mfd, curr_bl);
 	up(&mfd->sem);
 
 	return ret;
@@ -3165,9 +3166,6 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	struct msmfb_overlay_data req;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 
-	if (!mfd->panel_power_on) /* suspended */
-		return -EPERM;
-
 	if (mfd->overlay_play_enable == 0)	/* nothing to do */
 		return 0;
 
@@ -3178,6 +3176,17 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 		return ret;
 	}
 
+	if (info->node == 0 && !(mfd->cont_splash_done)) { /* primary */
+		mdp_set_dma_pan_info(info, NULL, TRUE);
+		if (msm_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable)) {
+			pr_err("%s: can't turn on display!\n", __func__);
+			return -EINVAL;
+		}
+	}
+
+	if (!mfd->panel_power_on) /* suspended */
+		return -EPERM;
+
 	complete(&mfd->msmfb_update_notify);
 	mutex_lock(&msm_fb_notify_update_sem);
 	if (mfd->msmfb_no_update_notify_timer.function)
@@ -3186,14 +3195,6 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	mfd->msmfb_no_update_notify_timer.expires = jiffies + (2 * HZ);
 	add_timer(&mfd->msmfb_no_update_notify_timer);
 	mutex_unlock(&msm_fb_notify_update_sem);
-
-	if (info->node == 0 && !(mfd->cont_splash_done)) { /* primary */
-		mdp_set_dma_pan_info(info, NULL, TRUE);
-		if (msm_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable)) {
-			pr_err("%s: can't turn on display!\n", __func__);
-			return -EINVAL;
-		}
-	}
 
 	ret = mdp4_overlay_play(info, &req);
 
